@@ -16,7 +16,7 @@ import "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 // price to reflect an unbalanced pool) or depositing / withdrawing funds. When deployed, the contract needs to be sent
 // some quantity of both the base and quote token in order to function properly (using the ERC20 transfer function to
 // the contract's address).
-contract OracleSwap {
+contract OracleSwap is ERC20 {
     event Transfer(address from, address to, uint amountUsd, uint amountWei);
 
     IPyth pyth;
@@ -33,7 +33,7 @@ contract OracleSwap {
         bytes32 _quoteTokenPriceId,
         address _baseToken,
         address _quoteToken
-    ) {
+    ) ERC20("LpToken", "LT") {
         pyth = IPyth(_pyth);
         baseTokenPriceId = _baseTokenPriceId;
         quoteTokenPriceId = _quoteTokenPriceId;
@@ -110,6 +110,62 @@ contract OracleSwap {
                 uint(uint64(price.price)) /
                 10 ** uint32(priceDecimals - targetDecimals);
         }
+    }
+
+    function addLiquidity(
+        uint baseAmount,
+        uint quoteAmount,
+        bytes[] calldata pythUpdateData
+    ) external {
+        uint updateFee = pyth.getUpdateFee(pythUpdateData);
+        pyth.updatePriceFeeds{value: updateFee}(pythUpdateData);
+
+        PythStructs.Price memory currentBasePrice = pyth.getPrice(
+            baseTokenPriceId
+        );
+        PythStructs.Price memory currentQuotePrice = pyth.getPrice(
+            quoteTokenPriceId
+        );
+
+        uint256 basePrice = convertToUint(currentBasePrice, 18);
+        uint256 quotePrice = convertToUint(currentQuotePrice, 18);
+
+        require(
+            basePrice * baseAmount == quotePrice * quoteAmount,
+            "OracleSwap: invalid liquidity"
+        );
+
+        // Transfer tokens to the contract
+        baseToken.transferFrom(msg.sender, address(this), baseAmount);
+        quoteToken.transferFrom(msg.sender, address(this), quoteAmount);
+
+        // Mint LP tokens to the sender
+        uint256 lpTotalSupply = totalSupply();
+        uint256 lpAmount = (baseAmount * lpTotalSupply) /
+            baseBalance() +
+            (quoteAmount * lpTotalSupply) /
+            quoteBalance();
+
+        _mint(msg.sender, lpAmount);
+    }
+
+    function removeLiquidity(uint lpAmount) external {
+        uint256 lpTotalSupply = totalSupply();
+        require(
+            lpAmount <= balanceOf(msg.sender),
+            "Insufficient LP tokens"
+        );
+
+        // Calculate the user's share of the pool's underlying assets
+        uint256 userBaseAmount = (baseBalance() * lpAmount) / lpTotalSupply;
+        uint256 userQuoteAmount = (quoteBalance() * lpAmount) / lpTotalSupply;
+
+        // Burn the user's LP tokens
+        _burn(msg.sender, lpAmount);
+
+        // Transfer the user's share of the underlying assets
+        baseToken.transfer(msg.sender, userBaseAmount);
+        quoteToken.transfer(msg.sender, userQuoteAmount);
     }
 
     // Get the number of base tokens in the pool
