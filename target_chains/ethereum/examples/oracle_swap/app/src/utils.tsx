@@ -17,6 +17,10 @@ export interface ChainState {
   accountQuoteBalance: BigNumber;
   poolBaseBalance: BigNumber;
   poolQuoteBalance: BigNumber;
+  accountLpBalance: BigNumber;
+  poolLpBalance: BigNumber;
+  baseReserve: BigNumber;
+  quoteReserve: BigNumber;
 }
 
 /**

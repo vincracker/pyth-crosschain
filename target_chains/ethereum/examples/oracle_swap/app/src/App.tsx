@@ -12,7 +12,8 @@ import { ChainState, ExchangeRateMeta, tokenQtyToNumber } from "./utils";
 import { OrderEntry } from "./OrderEntry";
 import { PriceText } from "./PriceText";
 import { MintButton } from "./MintButton";
-import { getBalance } from "./erc20";
+import { getBalance,getBaseReserve,getQuoteReserve,getTotalSupply } from "./erc20";
+import { OrderLiquidity } from "./OrderLiquidity";
 
 const CONFIG = {
   // Each token is configured with its ERC20 contract address and Pyth Price Feed ID.
@@ -32,7 +33,23 @@ const CONFIG = {
       "1fc18861232290221461220bd4e2acd1dcdfbc89c84092c93c18bdc7756c1588",
     decimals: 18,
   },
-  swapContractAddress: "0x15F9ccA28688F5E6Cbc8B00A8f33e8cE73eD7B02",
+  //   baseToken: {
+  //   name: "BRL",
+  //   erc20Address: "0x5683CBaFC61139F4334794B0a6Ecf4B5B29dd9eF",
+  //   pythPriceFeedId:
+  //     "08f781a893bc9340140c5f89c8a96f438bcfae4d1474cc0f688e3a52892c7318",
+  //   decimals: 18,
+  // },
+  // quoteToken: {
+  //   name: "USD",
+  //   erc20Address: "0x519bFd2da092B7d393bFaE8233eE02AdDB3c4314",
+  //   pythPriceFeedId:
+  //     "1fc18861232290221461220bd4e2acd1dcdfbc89c84092c93c18bdc7756c1588",
+  //   decimals: 18,
+  // },
+  // swapContractAddress: "0x15F9ccA28688F5E6Cbc8B00A8f33e8cE73eD7B02",
+  swapContractAddress: "0x3f0A2dC491ce822fC2Bf90aE771eF728e4bF777e",
+  swapTokenName: "LpToken",
   pythContractAddress: "0xff1a0f4744e8582DF1aE09D5611b887B6a12925C",
   priceServiceUrl: "https://xc-testnet.pyth.network",
   mintQty: 100,
@@ -77,6 +94,23 @@ function App() {
             CONFIG.quoteToken.erc20Address,
             CONFIG.swapContractAddress
           ),
+          accountLpBalance: await getBalance(
+            web3,
+            CONFIG.swapContractAddress,
+            account
+          ),
+          poolLpBalance: await getTotalSupply(
+            web3,
+            CONFIG.swapContractAddress
+            ),
+          baseReserve: await getBaseReserve(
+            web3,
+            CONFIG.swapContractAddress
+          ),
+          quoteReserve: await getQuoteReserve(
+            web3,
+            CONFIG.swapContractAddress
+          )
         });
       } else {
         setChainState(undefined);
@@ -151,6 +185,7 @@ function App() {
   }, []);
 
   const [isBuy, setIsBuy] = useState<boolean>(true);
+  const [isAdd, setIsAdd] = useState<boolean>(true);
 
   return (
     <div className="App">
@@ -208,6 +243,22 @@ function App() {
                   decimals={CONFIG.quoteToken.decimals}
                 />
               </p>
+              <p>
+                {tokenQtyToNumber(
+                  chainState.accountLpBalance,
+                  CONFIG.quoteToken.decimals
+                )}{" "}
+                {CONFIG.swapTokenName}
+                <MintButton
+                  web3={web3!}
+                  sender={account!}
+                  erc20Address={CONFIG.swapContractAddress}
+                  destination={account!}
+                  qty={CONFIG.mintQty}
+                  decimals={CONFIG.quoteToken.decimals}
+                />
+              </p>
+
             </div>
           ) : (
             <p>loading...</p>
@@ -249,6 +300,35 @@ function App() {
                   decimals={CONFIG.quoteToken.decimals}
                 />
               </p>
+              <p>
+                {"Lp Total Supply: "}
+                {tokenQtyToNumber(
+                  chainState.poolLpBalance,
+                  CONFIG.quoteToken.decimals
+                )}{" "}
+                {/* <MintButton
+                  web3={web3!}
+                  sender={account!}
+                  erc20Address={CONFIG.swapContractAddress}
+                  destination={CONFIG.swapContractAddress}
+                  qty={CONFIG.mintQty}
+                  decimals={CONFIG.quoteToken.decimals}
+                /> */}
+              </p>
+              <p>
+                {"Base Reserves: "}
+                {tokenQtyToNumber(
+                  chainState.baseReserve,
+                  CONFIG.baseToken.decimals
+                )}{" "}
+              </p>
+              <p>
+                {"Quote Reserves: "}
+                {tokenQtyToNumber(
+                  chainState.quoteReserve,
+                  CONFIG.quoteToken.decimals
+                )}{" "}
+              </p>
             </div>
           ) : (
             <p>loading...</p>
@@ -286,6 +366,46 @@ function App() {
             web3={web3}
             account={account}
             isBuy={isBuy}
+            approxPrice={exchangeRateMeta?.rate}
+            baseToken={CONFIG.baseToken}
+            quoteToken={CONFIG.quoteToken}
+            priceServiceUrl={CONFIG.priceServiceUrl}
+            pythContractAddress={CONFIG.pythContractAddress}
+            swapContractAddress={CONFIG.swapContractAddress}
+          />
+        </div>
+      </div>
+
+      <div className={"main"}>
+        <h3>
+          Add/Remove liquidity
+        </h3>
+        <PriceText
+          price={pythOffChainPrice}
+          currentTime={time}
+          rate={exchangeRateMeta}
+          baseToken={CONFIG.baseToken}
+          quoteToken={CONFIG.quoteToken}
+        />
+        <div className="tab-header">
+          <div
+            className={`tab-item ${isAdd ? "active" : ""}`}
+            onClick={() => setIsAdd(true)}
+          >
+            Add
+          </div>
+          <div
+            className={`tab-item ${!isAdd ? "active" : ""}`}
+            onClick={() => setIsAdd(false)}
+          >
+            Remove
+          </div>
+        </div>
+        <div className="tab-content">
+          <OrderLiquidity
+            web3={web3}
+            account={account}
+            isAdd={isAdd}
             approxPrice={exchangeRateMeta?.rate}
             baseToken={CONFIG.baseToken}
             quoteToken={CONFIG.quoteToken}

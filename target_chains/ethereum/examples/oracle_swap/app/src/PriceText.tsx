@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { HexString, Price } from "@pythnetwork/pyth-evm-js";
+import { HexString, Price } from "../../../../sdk/js/src";
 import { ExchangeRateMeta, timeAgo, TokenConfig } from "./utils";
 
 export function PriceTicker(props: {

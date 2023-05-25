@@ -1,5 +1,6 @@
 import "./App.css";
 import ERC20Abi from "./abi/ERC20MockAbi.json";
+import OracleSwapAbi from "./abi/OracleSwapAbi.json";
 import Web3 from "web3";
 import { BigNumber } from "ethers";
 
@@ -44,6 +45,31 @@ export async function getBalance(
   const erc20 = new web3.eth.Contract(ERC20Abi as any, erc20Address);
   return BigNumber.from(await erc20.methods.balanceOf(address).call());
 }
+
+export async function getTotalSupply(
+  web3: Web3,
+  erc20Address: string
+): Promise<BigNumber> {
+  const erc20 = new web3.eth.Contract(ERC20Abi as any, erc20Address);
+  return BigNumber.from(await erc20.methods.totalSupply().call());
+}
+
+export async function getBaseReserve(
+  web3: Web3,
+  swapContract: string
+): Promise<BigNumber> {
+  const swap = new web3.eth.Contract(OracleSwapAbi as any, swapContract);
+  return BigNumber.from(await swap.methods.baseTokenLiquidityReserve().call());
+}
+
+export async function getQuoteReserve(
+  web3: Web3,
+  swapContract: string
+): Promise<BigNumber> {
+  const swap = new web3.eth.Contract(OracleSwapAbi as any, swapContract);
+  return BigNumber.from(await swap.methods.quoteTokenLiquidityReserve().call());
+}
+
 
 export async function mint(
   web3: Web3,
