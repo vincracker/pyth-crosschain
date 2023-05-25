@@ -27,13 +27,17 @@ contract OracleSwap is ERC20 {
     ERC20 public baseToken;
     ERC20 public quoteToken;
 
+    uint256 public baseTokenLiquidityReserve;
+    uint256 public quoteTokenLiquidityReserve;
+    uint256 public swapFeeRate = 0.003e18; // 0.3%
+
     constructor(
         address _pyth,
         bytes32 _baseTokenPriceId,
         bytes32 _quoteTokenPriceId,
         address _baseToken,
         address _quoteToken
-    ) ERC20("LpToken", "LT") {
+    ) ERC20("LpToken", "LP") {
         pyth = IPyth(_pyth);
         baseTokenPriceId = _baseTokenPriceId;
         quoteTokenPriceId = _quoteTokenPriceId;
@@ -75,18 +79,21 @@ contract OracleSwap is ERC20 {
         // This computation loses precision. The infinite-precision result is between [quoteSize, quoteSize + 1]
         // We need to round this result in favor of the contract.
         uint256 quoteSize = (size * basePrice) / quotePrice;
+        uint256 quoteSizeWithFee = (quoteSize * (1e18 - swapFeeRate)) / 1e18;
+        uint256 baseSizeWithFee = (size * (1e18 - swapFeeRate)) / 1e18;
 
         // TODO: use confidence interval
 
         if (isBuy) {
             // (Round up)
             quoteSize += 1;
-
             quoteToken.transferFrom(msg.sender, address(this), quoteSize);
-            baseToken.transfer(msg.sender, size);
+            baseToken.transfer(msg.sender, baseSizeWithFee);
+            baseTokenLiquidityReserve += size - baseSizeWithFee;
         } else {
             baseToken.transferFrom(msg.sender, address(this), size);
-            quoteToken.transfer(msg.sender, quoteSize);
+            quoteToken.transfer(msg.sender, quoteSizeWithFee);
+            quoteTokenLiquidityReserve += quoteSize - quoteSizeWithFee;
         }
     }
 
@@ -114,9 +121,8 @@ contract OracleSwap is ERC20 {
 
     function addLiquidity(
         uint baseAmount,
-        uint quoteAmount,
         bytes[] calldata pythUpdateData
-    ) external {
+    ) external payable {
         uint updateFee = pyth.getUpdateFee(pythUpdateData);
         pyth.updatePriceFeeds{value: updateFee}(pythUpdateData);
 
@@ -130,10 +136,7 @@ contract OracleSwap is ERC20 {
         uint256 basePrice = convertToUint(currentBasePrice, 18);
         uint256 quotePrice = convertToUint(currentQuotePrice, 18);
 
-        require(
-            basePrice * baseAmount == quotePrice * quoteAmount,
-            "OracleSwap: invalid liquidity"
-        );
+        uint quoteAmount = (basePrice * baseAmount) / quotePrice;
 
         // Transfer tokens to the contract
         baseToken.transferFrom(msg.sender, address(this), baseAmount);
@@ -141,31 +144,50 @@ contract OracleSwap is ERC20 {
 
         // Mint LP tokens to the sender
         uint256 lpTotalSupply = totalSupply();
-        uint256 lpAmount = (baseAmount * lpTotalSupply) /
-            baseBalance() +
-            (quoteAmount * lpTotalSupply) /
-            quoteBalance();
-
-        _mint(msg.sender, lpAmount);
+        if (lpTotalSupply == 0) {
+            _mint(msg.sender, baseAmount);
+        } else {
+            uint256 lpAmount = (baseAmount * lpTotalSupply) / baseBalance();
+            _mint(msg.sender, lpAmount);
+        }
     }
 
-    function removeLiquidity(uint lpAmount) external {
+    function removeLiquidity(
+        uint lpAmount,
+        bytes[] calldata pythUpdateData
+    ) external payable {
         uint256 lpTotalSupply = totalSupply();
-        require(
-            lpAmount <= balanceOf(msg.sender),
-            "Insufficient LP tokens"
+        require(lpAmount <= balanceOf(msg.sender), "Insufficient LP tokens");
+
+        uint updateFee = pyth.getUpdateFee(pythUpdateData);
+        pyth.updatePriceFeeds{value: updateFee}(pythUpdateData);
+
+        PythStructs.Price memory currentBasePrice = pyth.getPrice(
+            baseTokenPriceId
         );
+        PythStructs.Price memory currentQuotePrice = pyth.getPrice(
+            quoteTokenPriceId
+        );
+
+        uint256 basePrice = convertToUint(currentBasePrice, 18);
+        uint256 quotePrice = convertToUint(currentQuotePrice, 18);
 
         // Calculate the user's share of the pool's underlying assets
         uint256 userBaseAmount = (baseBalance() * lpAmount) / lpTotalSupply;
-        uint256 userQuoteAmount = (quoteBalance() * lpAmount) / lpTotalSupply;
+        uint256 userQuoteAmount = userBaseAmount * basePrice / quotePrice;
+
+        uint256 userBaseReserve = (baseTokenLiquidityReserve * lpAmount) / lpTotalSupply;
+        uint256 userQuoteReserve = (quoteTokenLiquidityReserve * lpAmount) / lpTotalSupply;
 
         // Burn the user's LP tokens
         _burn(msg.sender, lpAmount);
 
         // Transfer the user's share of the underlying assets
-        baseToken.transfer(msg.sender, userBaseAmount);
-        quoteToken.transfer(msg.sender, userQuoteAmount);
+        baseToken.transfer(msg.sender, userBaseAmount + userBaseReserve);
+        quoteToken.transfer(msg.sender, userQuoteAmount + userQuoteReserve);
+
+        baseTokenLiquidityReserve -= userBaseReserve;
+        quoteTokenLiquidityReserve -= userQuoteReserve;
     }
 
     // Get the number of base tokens in the pool
