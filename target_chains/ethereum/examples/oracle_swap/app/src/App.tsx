@@ -48,7 +48,7 @@ const CONFIG = {
   //   decimals: 18,
   // },
   // swapContractAddress: "0x15F9ccA28688F5E6Cbc8B00A8f33e8cE73eD7B02",
-  swapContractAddress: "0x3f0A2dC491ce822fC2Bf90aE771eF728e4bF777e",
+  swapContractAddress: "0xb25d62ce7a1305B13CAa3C58d0d784e90f919577",
   swapTokenName: "LpToken",
   pythContractAddress: "0xff1a0f4744e8582DF1aE09D5611b887B6a12925C",
   priceServiceUrl: "https://xc-testnet.pyth.network",
